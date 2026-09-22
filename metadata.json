@@ -1,0 +1,6 @@
+{
+  "name": "vouch",
+  "description": "Enterprise-grade document security and phishing inspector analyzing job offers, contracts, payment traps, and domain integrity to compute a dynamic Scam Threat Index.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
