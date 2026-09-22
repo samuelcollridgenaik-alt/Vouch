@@ -9,13 +9,16 @@ export function runHeuristicScan(req: ScanRequest): ScanResult {
   const lowerUrl = url.toLowerCase();
   const lowerEmail = senderEmail.toLowerCase();
 
+  // Pre-split sentences once per document to avoid repeated regex allocations
+  const preSplit = splitIntoSentences(text);
+
   // 1. Payment Demand Detection
   const paymentFlags: PaymentDemandFlag[] = [];
   let paymentScore = 0;
 
   if (
-    hasAffirmativeDemand(text, ["cashier's check", "cashiers check", "check refund"]) ||
-    (hasAffirmativeDemand(text, ['deposit', 'check']) && hasAffirmativeDemand(text, ['vendor']))
+    hasAffirmativeDemand(text, ["cashier's check", "cashiers check", "check refund"], preSplit) ||
+    (hasAffirmativeDemand(text, ['deposit', 'check'], preSplit) && hasAffirmativeDemand(text, ['vendor'], preSplit))
   ) {
     paymentScore += 35;
     paymentFlags.push({
@@ -24,12 +27,12 @@ export function runHeuristicScan(req: ScanRequest): ScanResult {
       category: 'CHECK_REFUND',
       riskScore: 95,
       explanation: "Classic fake check bounce scam. Banks credit checks preliminarily before clearing; once bounced (in 7-14 days), you are liable for all forwarded funds.",
-      quote: extractMatchingSentence(text, ["cashier's check", "cashiers check", "deposit this check", "vendor"])
+      quote: extractMatchingSentence(text, ["cashier's check", "cashiers check", "deposit this check", "vendor"], preSplit)
     });
   }
 
   if (
-    hasAffirmativeDemand(text, ['hardware vendor', 'authorized vendor', 'procure your encrypted', 'buy equipment', 'pay for equipment'])
+    hasAffirmativeDemand(text, ['hardware vendor', 'authorized vendor', 'procure your encrypted', 'buy equipment', 'pay for equipment'], preSplit)
   ) {
     paymentScore += 25;
     paymentFlags.push({
@@ -38,12 +41,12 @@ export function runHeuristicScan(req: ScanRequest): ScanResult {
       category: 'EQUIPMENT_PURCHASE',
       riskScore: 90,
       explanation: "Legitimate corporate employers ship corporate hardware directly via IT logistics. They never instruct new hires to purchase laptops through personal money transfers.",
-      quote: extractMatchingSentence(text, ["hardware vendor", "authorized vendor", "procure", "equipment"])
+      quote: extractMatchingSentence(text, ["hardware vendor", "authorized vendor", "procure", "equipment"], preSplit)
     });
   }
 
   if (
-    hasAffirmativeDemand(text, ['wire', 'western union', 'moneygram', 'zelle', 'apple cash', 'bitcoin', 'crypto', 'usdt', 'upi', 'imps'])
+    hasAffirmativeDemand(text, ['wire', 'western union', 'moneygram', 'zelle', 'apple cash', 'bitcoin', 'crypto', 'usdt', 'upi', 'imps'], preSplit)
   ) {
     paymentScore += 25;
     paymentFlags.push({
@@ -52,12 +55,12 @@ export function runHeuristicScan(req: ScanRequest): ScanResult {
       category: 'WIRE_TRANSFER',
       riskScore: 92,
       explanation: "Demanding untraceable, non-refundable payment methods with zero fraud protection is the hallmark of financial phishing traps.",
-      quote: extractMatchingSentence(text, ["zelle", "bitcoin", "western union", "wire", "usdt", "upi", "imps"])
+      quote: extractMatchingSentence(text, ["zelle", "bitcoin", "western union", "wire", "usdt", "upi", "imps"], preSplit)
     });
   }
 
   if (
-    hasAffirmativeDemand(text, ['training fee', 'certification module', 'administration fee', 'clearance fee', 'placement contract'])
+    hasAffirmativeDemand(text, ['training fee', 'certification module', 'administration fee', 'clearance fee', 'placement contract'], preSplit)
   ) {
     paymentScore += 20;
     paymentFlags.push({
@@ -66,12 +69,12 @@ export function runHeuristicScan(req: ScanRequest): ScanResult {
       category: 'TRAINING_FEE',
       riskScore: 85,
       explanation: "Legitimate placement firms and employers cover all orientation/training costs. Requiring candidates to pay for guaranteed placement violates labor and recruitment codes.",
-      quote: extractMatchingSentence(text, ["training", "certification", "clearance fee", "administrative"])
+      quote: extractMatchingSentence(text, ["training", "certification", "clearance fee", "administrative"], preSplit)
     });
   }
 
   if (
-    hasAffirmativeDemand(text, ['laptop security deposit', 'hardware security deposit', 'refundable security deposit', 'laptop allocation', 'laptop deposit']) &&
+    hasAffirmativeDemand(text, ['laptop security deposit', 'hardware security deposit', 'refundable security deposit', 'laptop allocation', 'laptop deposit'], preSplit) &&
     !text.toLowerCase().includes('in-person viewing')
   ) {
     paymentScore += 30;
@@ -447,15 +450,33 @@ Requested Action: Block sender domain and add IOC signatures to enterprise email
   };
 }
 
-export function hasAffirmativeDemand(text: string, keywords: string[]): boolean {
-  const sentences = text.split(/(?<=[.?!])\s+/);
-  const negationTerms = ['never ask', 'never require', 'will not ask', 'do not pay', 'no cost', 'zero cost', 'free of charge', 'at our expense', 'company provides'];
+const SENTENCE_SPLIT_REGEX = /[.?!]\s+/;
 
-  for (const sentence of sentences) {
-    const sLower = sentence.toLowerCase();
+function splitIntoSentences(text: string): string[] {
+  if (!text) return [];
+  return text.split(SENTENCE_SPLIT_REGEX);
+}
+
+const DEFAULT_NEGATION_TERMS = [
+  'never ask',
+  'never require',
+  'will not ask',
+  'do not pay',
+  'no cost',
+  'zero cost',
+  'free of charge',
+  'at our expense',
+  'company provides'
+];
+
+export function hasAffirmativeDemand(text: string, keywords: string[], preSplitSentences?: string[]): boolean {
+  const sentences = preSplitSentences || splitIntoSentences(text);
+
+  for (let i = 0; i < sentences.length; i++) {
+    const sLower = sentences[i].toLowerCase();
     const hasKeyword = keywords.some((k) => sLower.includes(k));
     if (hasKeyword) {
-      const isNegated = negationTerms.some((neg) => sLower.includes(neg));
+      const isNegated = DEFAULT_NEGATION_TERMS.some((neg) => sLower.includes(neg));
       if (!isNegated) {
         return true;
       }
@@ -464,14 +485,14 @@ export function hasAffirmativeDemand(text: string, keywords: string[]): boolean 
   return false;
 }
 
-export function extractMatchingSentence(text: string, keywords: string[]): string {
-  const sentences = text.split(/(?<=[.?!])\s+/);
-  const negationTerms = ['never ask', 'never require', 'will not ask', 'do not pay', 'no cost', 'zero cost', 'free of charge'];
+export function extractMatchingSentence(text: string, keywords: string[], preSplitSentences?: string[]): string {
+  const sentences = preSplitSentences || splitIntoSentences(text);
 
-  for (const sentence of sentences) {
+  for (let i = 0; i < sentences.length; i++) {
+    const sentence = sentences[i];
     const sLower = sentence.toLowerCase();
     if (keywords.some((k) => sLower.includes(k))) {
-      if (!negationTerms.some((neg) => sLower.includes(neg))) {
+      if (!DEFAULT_NEGATION_TERMS.some((neg) => sLower.includes(neg))) {
         return sentence.trim();
       }
     }

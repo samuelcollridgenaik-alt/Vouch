@@ -14,11 +14,22 @@ async function startServer() {
 
   app.use(express.json({ limit: '25mb' }));
 
+  // In-Memory Fast Cache for Repeat Scans (O(1) lookups, max 200 items)
+  const scanCache = new Map<string, { result: ScanResult; timestamp: number }>();
+  const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes TTL
+
+  function getCacheKey(req: ScanRequest): string {
+    const textPart = (req.text || '').trim().slice(0, 1000);
+    const urlPart = (req.url || '').trim().toLowerCase();
+    const emailPart = (req.senderEmail || '').trim().toLowerCase();
+    return `${textPart}|${urlPart}|${emailPart}`;
+  }
+
   // API Health Check
   app.get('/api/health', (req: Request, res: Response) => {
     res.json({
       status: 'ok',
-      service: 'PhishGuard Security Scanner',
+      service: 'vouch Document Security Scanner',
       geminiConfigured: !!process.env.GEMINI_API_KEY,
       timestamp: new Date().toISOString()
     });
@@ -30,6 +41,16 @@ async function startServer() {
       const scanReq: ScanRequest = req.body;
       if (!scanReq || (!scanReq.text && !scanReq.url)) {
         return res.status(400).json({ error: 'Please provide offer text or a URL to scan.' });
+      }
+
+      // Check fast in-memory cache first for sub-millisecond repeat queries
+      const cacheKey = getCacheKey(scanReq);
+      const cached = scanCache.get(cacheKey);
+      if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+        return res.json({
+          ...cached.result,
+          scanEngine: `${cached.result.scanEngine} (cached)`
+        });
       }
 
       // Always calculate baseline heuristics
@@ -199,6 +220,13 @@ Synthesize this into a structured JSON response matching the schema.`;
             scanEngine: 'gemini-3.8-flash'
           };
 
+          // Store in fast cache (capped at 200 items to avoid memory leaks)
+          if (scanCache.size >= 200) {
+            const oldestKey = scanCache.keys().next().value;
+            if (oldestKey) scanCache.delete(oldestKey);
+          }
+          scanCache.set(cacheKey, { result: merged, timestamp: Date.now() });
+
           return res.json(merged);
         } catch (geminiErr) {
           console.warn('Gemini API call failed or rate limited, falling back to deterministic heuristic engine:', geminiErr);
@@ -207,7 +235,13 @@ Synthesize this into a structured JSON response matching the schema.`;
         }
       }
 
-      // If no API key, return heuristic analysis
+      // If no API key, store and return heuristic analysis
+      if (scanCache.size >= 200) {
+        const oldestKey = scanCache.keys().next().value;
+        if (oldestKey) scanCache.delete(oldestKey);
+      }
+      scanCache.set(cacheKey, { result: baseline, timestamp: Date.now() });
+
       return res.json(baseline);
     } catch (err: any) {
       console.error('Scan error:', err);

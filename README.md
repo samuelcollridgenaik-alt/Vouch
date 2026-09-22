@@ -2,7 +2,7 @@
 
 > **Status:** MVP Deployed & Public Verification Complete  
 > **Copyright:** © 2026 samuelio. All rights reserved.  
-> **Live Prototype URL:** [https://ais-pre-drrxvtdeu326nuyvb4hun2-106615756771.asia-southeast1.run.app](https://ais-pre-drrxvtdeu326nuyvb4hun2-106615756771.asia-southeast1.run.app)  
+> **Live Prototype URL:** [https://vouch-tawny.vercel.app/](https://vouch-tawny.vercel.app/)  
 
 ---
 
@@ -11,7 +11,7 @@
 | Deliverable | Verification Status | Details / Link |
 | :--- | :--- | :--- |
 | **Track / Problem** | **Official Selected Track** | **Fake Offer Letter & Phishing Inspector** |
-| **Live Deployed Prototype** | **Verified Active (Cloud Run)** | [Open Live App](https://ais-pre-drrxvtdeu326nuyvb4hun2-106615756771.asia-southeast1.run.app) |
+| **Live Deployed Prototype** | **Verified Active (Cloud Run & Vercel Mirror)** | [Open Live App (Vercel)](https://vouch-tawny.vercel.app/) / [Cloud Run Mirror](https://ais-pre-drrxvtdeu326nuyvb4hun2-106615756771.asia-southeast1.run.app) |
 | **Source Code Repository** | **Verified (Git `main`)** | Clean tree, zero build errors, production ready |
 | **Security Architecture** | **Dual-Engine Architecture** | Autonomous Inference + Deterministic Heuristic Defense |
 | **Threat Metric** | **Dynamic Scam Threat Index** | Mathematical 0–100% composite risk score |
